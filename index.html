@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>لعبة حرب نهائية</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:Arial, sans-serif; color:white; }
+canvas { display:block; margin:0 auto; background:#111; }
+#score, #level, #gameOver, #bestScore {
+  position:absolute; left:10px;
+}
+#score { top:10px; font-size:22px; }
+#level { top:40px; font-size:20px; }
+#bestScore { top:70px; font-size:18px; }
+#gameOver { top:50%; left:50%; transform:translate(-50%,-50%); font-size:36px; color:red; display:none; text-align:center;}
+button { margin-top:10px; padding:10px 20px; font-size:18px; cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="score">النقاط: 0</div>
+<div id="level">المستوى: 1</div>
+<div id="bestScore">أفضل نقاط: 0</div>
+<div id="gameOver">
+  انتهت اللعبة!<br>
+  <button onclick="restartGame()">إعادة اللعب</button>
+</div>
+<canvas id="gameCanvas" width="1000" height="600"></canvas>
+<script>
+// ---- متغيرات اللعبة ----
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let player = { x:480, y:520, width:50, height:50, color:'cyan', speed:6, bullets:[], missiles:[], fireCooldown:0, missileCooldown:50 };
+let enemies = [], bullets = [], missiles = [], explosions = [];
+let score = 0, bestScore = 0, level = 1, keys = {}, frames = 0, gameOver=false;
+let backgrounds = ['#111','#222','#333','#444','#555','#666'];
+
+// ---- التحكم ----
+document.addEventListener('keydown', e=>keys[e.code]=true);
+document.addEventListener('keyup', e=>keys[e.code]=false);
+
+// ---- إطلاق الرصاص ----
+function shootBullet(){
+  if(player.fireCooldown<=0){
+    bullets.push({ x:player.x+player.width/2-5, y:player.y, width:10, height:20, color:'yellow', speed:10 });
+    player.fireCooldown=10;
+  }
+}
+
+// ---- إطلاق صاروخ ----
+function shootMissile(){
+  if(player.missileCooldown<=0){
+    missiles.push({ x:player.x+player.width/2-5, y:player.y, width:8, height:25, color:'red', speed:7 });
+    player.missileCooldown=50;
+  }
+}
+
+// ---- أعداء ----
+function spawnEnemy(){
+  let type = Math.floor(Math.random()*6)+1;
+  let width=40, height=40;
+  let color;
+  switch(type){
+    case 1: color='red'; break;
+    case 2: color='orange'; break;
+    case 3: color='purple'; break;
+    case 4: color='lime'; break;
+    case 5: color='pink'; break;
+    case 6: color='blue'; break;
+  }
+  enemies.push({ x:Math.random()*(canvas.width-width), y:-height, width, height, color, speed:1+Math.random()*3, type, movePattern:Math.random()*2*Math.PI });
+}
+
+// ---- انفجارات ----
+function createExplosion(x,y){ explosions.push({ x, y, radius:10, maxRadius:30 }); }
+
+// ---- تحديث اللعبة ----
+function update(){
+  if(gameOver) return;
+  frames++;
+
+  // حركة اللاعب
+  if(keys['ArrowLeft'] && player.x>0) player.x -= player.speed;
+  if(keys['ArrowRight'] && player.x+player.width<canvas.width) player.x += player.speed;
+  if(keys['ArrowUp'] && player.y>0) player.y -= player.speed;
+  if(keys['ArrowDown'] && player.y+player.height<canvas.height) player.y += player.speed;
+  if(keys['Space']) shootBullet();
+  if(keys['KeyX']) shootMissile();
+
+  if(player.fireCooldown>0) player.fireCooldown--;
+  if(player.missileCooldown>0) player.missileCooldown--;
+
+  // تحريك الرصاص
+  bullets.forEach((b,i)=> { b.y-=b.speed; if(b.y<0) bullets.splice(i,1); });
+  missiles.forEach((m,i)=> { m.y-=m.speed; if(m.y<0) missiles.splice(i,1); });
+
+  // تحريك الأعداء
+  enemies.forEach((e,i)=>{
+    e.y += e.speed + level*0.1;
+    e.x += Math.sin(frames*0.05+e.movePattern)*2;
+    if(e.y>canvas.height) { enemies.splice(i,1); score-=5; }
+    // تصادم مع الرصاص
+    bullets.forEach((b,j)=>{
+      if(b.x<b.x+b.width && b.x+b.width>e.x && b.y<e.y+e.height && b.y+b.height>e.y){
+        createExplosion(e.x+e.width/2,e.y+e.height/2);
+        bullets.splice(j,1); enemies.splice(i,1); score+=10;
+      }
+    });
+    // تصادم مع الصواريخ
+    missiles.forEach((m,j)=>{
+      if(m.x<m.x+m.width && m.x+m.width>e.x && m.y<e.y+e.height && m.y+m.height>e.y){
+        createExplosion(e.x+e.width/2,e.y+e.height/2);
+        missiles.splice(j,1); enemies.splice(i,1); score+=20;
+      }
+    });
+    // تصادم مع اللاعب
+    if(player.x<e.x+e.width && player.x+player.width>e.x && player.y<e.y+e.height && player.y+player.height>e.y){
+      gameOver=true;
+      document.getElementById('gameOver').style.display='block';
+      if(score>bestScore) bestScore=score;
+      document.getElementById('bestScore').innerText="أفضل نقاط: "+bestScore;
+    }
+  });
+
+  // انفجارات
+  explosions.forEach((ex,i)=>{
+    ex.radius+=3;
+    if(ex.radius>ex.maxRadius) explosions.splice(i,1);
+  });
+
+  // زيادة المستوى كل 500 نقطة
+  if(score>level*500) level++;
+  document.getElementById('score').innerText="النقاط: "+score;
+  document.getElementById('level').innerText="المستوى: "+level;
+}
+
+// ---- رسم ----
+function draw(){
+  // خلفية ديناميكية
+  ctx.fillStyle = backgrounds[frames%backgrounds.length];
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // خطوط متحركة
+  for(let i=0;i<canvas.height;i+=50){
+    ctx.strokeStyle='rgba(255,255,255,0.05)';
+    ctx.beginPath();
+    ctx.moveTo(0,(i+frames*2)%canvas.height);
+    ctx.lineTo(canvas.width,(i+frames*2)%canvas.height);
+    ctx.stroke();
+  }
+
+  // لاعب
+  ctx.fillStyle = player.color;
+  ctx.fillRect(player.x,player.y,player.width,player.height);
+
+  // رصاص وصواريخ
+  bullets.forEach(b => { ctx.fillStyle=b.color; ctx.fillRect(b.x,b.y,b.width,b.height); });
+  missiles.forEach(m => { ctx.fillStyle=m.color; ctx.fillRect(m.x,m.y,m.width,m.height); });
+
+  // أعداء
+  enemies.forEach(e => { ctx.fillStyle=e.color; ctx.fillRect(e.x,e.y,e.width,e.height); });
+
+  // انفجارات
+  explosions.forEach(ex=>{
+    ctx.beginPath();
+    ctx.arc(ex.x,ex.y,ex.radius,0,Math.PI*2);
+    ctx.fillStyle='orange';
+    ctx.fill();
+  });
+}
+
+// ---- حلقة اللعبة ----
+function gameLoop(){
+  if(!gameOver && Math.random()<0.03+level*0.005) spawnEnemy();
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+gameLoop();
+
+// ---- إعادة اللعب ----
+function restartGame(){
+  gameOver=false;
+  player.x=480; player.y=520; bullets=[]; missiles=[]; enemies=[]; explosions=[]; score=0; level=1;
+  document.getElementById('gameOver').style.display='none';
+}
+</script>
+</body>
+</html>
